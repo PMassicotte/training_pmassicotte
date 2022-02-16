@@ -1,0 +1,99 @@
+---
+title: "Tidy and stuff"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  comment = "#>",
+  collapse = TRUE,
+  cache = FALSE,
+  dpi = 600,
+  out.width = "100%",
+  fig.align = "center",
+  fig.width = 8,
+  fig.asp = 0.618, # 1 / phi
+  fig.show = "hold",
+  dev = "png",
+  message = FALSE,
+  warning = FALSE,
+  echo = TRUE
+)
+
+library(tidyverse)
+library(ggpmthemes)
+library(glue)
+
+theme_set(theme_poppins())
+
+theme_update(
+  strip.background = element_blank(),
+  strip.text = element_text(face = "bold"),
+  panel.border = element_blank(),
+  axis.ticks = element_blank()
+)
+```
+
+```{r}
+catch <-
+  read_csv(
+    "https://cn.dataone.org/cn/v2/resolve/df35b.302.1",
+    name_repair = janitor::make_clean_names
+  )
+
+region <-
+  read_csv(
+    "https://cn.dataone.org/cn/v2/resolve/df35b.303.1",
+    name_repair = janitor::make_clean_names
+  )
+
+catch
+region
+
+catch <- catch %>%
+  select(-all, -notes_reg_code) %>%
+  mutate(chinook = if_else(chinook == "I", "1", chinook)) %>% 
+  pivot_longer(
+    -c(region, year),
+    names_to = "fish_species",
+    values_to = "fish_count",
+    values_transform = list(fish_count = as.integer)
+  )
+```
+
+## Merge data frame
+
+```{r}
+merged_data <- inner_join(region, catch, by = c("code" = "region"))
+
+merged_data
+```
+
+## Look at the data
+
+```{r}
+#| out.width = "80%"
+merged_data %>% 
+  ggplot(aes(x = year, y = fish_count, color = fish_species)) +
+  geom_line() +
+  scale_x_continuous(breaks = scales::breaks_pretty(n = 4)) +
+  facet_wrap(~str_wrap(mgmt_area, 15), scales = "free_y") +
+  labs(
+    x = NULL,
+    y = "Fish count"
+  ) +
+  theme(
+    legend.position = "top",
+    legend.title = element_blank()
+  )
+```
+
+```{r}
+merged_data %>% 
+  select(code2 = code)
+```
+
+
+
