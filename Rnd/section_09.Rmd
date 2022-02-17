@@ -1,0 +1,56 @@
+---
+title: "Untitled"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+```
+
+```{r}
+library(tidyverse)  
+library(leaflet)
+library(DT)
+library(scales) # install.packages("scales")
+```
+
+## Read in the data
+
+```{r}
+url <- pins::pin("https://knb.ecoinformatics.org/knb/d1/mn/v2/object/urn%3Auuid%3Af119a05b-bbe7-4aea-93c6-85434dcb1c5e")
+
+df <- read_csv(url) %>% 
+  janitor::clean_names()
+```
+
+## Data preparation
+
+```{r}
+annual_escapement <- df %>% 
+  separate(sample_date, into = c("year", "month", "day"), sep = "-", convert = TRUE) %>% 
+  mutate(species2 = fct_lump(species, n = 6)) %>% 
+  group_by(species2, sasap_region, year) %>% 
+  summarize(escapement = sum(daily_count)) %>% 
+  ungroup() %>% 
+  filter(species2 != "Other")
+
+annual_escapement
+
+annual_escapement %>% 
+  count(species2, year, sasap_region, sort = TRUE)
+
+```
+
+
+## Vizualisation
+
+```{r}
+annual_escapement %>% 
+  ggplot(aes(x = year, y = escapement, color = species2)) +
+  geom_line() +
+  scale_y_log10() +
+  facet_wrap(vars(sasap_region), scales = "free_y")
+```
+

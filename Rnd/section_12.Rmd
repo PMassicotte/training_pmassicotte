@@ -1,0 +1,40 @@
+---
+title: "Untitled"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(sf)
+
+# sf_use_s2(FALSE)
+
+# install.packages("crsuggest")
+library(crsuggest)
+```
+
+## Load data
+
+```{r}
+predators <- read_csv("https://cn.dataone.org/cn/v2/resolve/urn:uuid:861d908a-7476-4d80-9b98-1b5970ad564f")
+nests <- read_csv("https://cn.dataone.org/cn/v2/resolve/urn:uuid:982bd2fc-4edf-4da7-96ef-0d11b853102d")
+```
+
+```{r}
+nests_sf <- nests %>% 
+  drop_na(long_corrected, lat_corrected) %>% 
+  st_as_sf(coords = c("long_corrected", "lat_corrected"), crs = 4326)
+
+# crsuggest::suggest_crs(nests_sf)
+
+nests_sf %>% 
+  ggplot() +
+  geom_sf(aes(color = plot)) +
+  coord_sf(crs = 3411) +
+  theme_minimal()
+```
+
