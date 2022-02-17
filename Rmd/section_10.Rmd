@@ -1,0 +1,42 @@
+---
+title: "Functions and Packages"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+
+library(tidyverse)  
+```
+
+```{r}
+fahr_to_celsius <- function(fahr) {
+  celsius <- (fahr - 32) * 5 / 9
+  
+  return(celsius)
+}
+```
+
+```{r}
+#' Convert Celsius temperature to Fahrenheit
+#'
+#' @param celsius Temperature in Celsius
+#'
+#' @return Temperature in Fahrenheit
+#' @export
+#'
+#' @examples
+celsius_to_fahr <- function(celsius) {
+  fahr <- celsius * 9 / 5 + 32
+  
+  return(fahr)
+}
+```
+
+```{r}
+fahr <- 80
+celsius_to_fahr(fahr_to_celsius(fahr)) == fahr
+```
+

@@ -6,35 +6,201 @@ editor_options:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(
+  comment = "#>",
+  collapse = TRUE,
+  cache = TRUE,
+  dpi = 300,
+  out.width = "100%",
+  fig.align = "center",
+  fig.width = 8,
+  fig.asp = 0.618, # 1 / phi
+  fig.show = "hold",
+  dev = "png",
+  message = FALSE,
+  warning = FALSE,
+  echo = TRUE
+)
 
 library(tidyverse)
 library(sf)
-
-# sf_use_s2(FALSE)
-
-# install.packages("crsuggest")
 library(crsuggest)
+
+library(ggpmthemes)
+
+theme_set(theme_light_modified(base_family = "Montserrat"))
+
+theme_update(
+  panel.border = element_blank(),
+  axis.ticks = element_blank(),
+  strip.background = element_blank(),
+  strip.text = element_text(face = "bold", size = 14)
+)
 ```
 
 ## Load data
 
 ```{r}
-predators <- read_csv("https://cn.dataone.org/cn/v2/resolve/urn:uuid:861d908a-7476-4d80-9b98-1b5970ad564f")
-nests <- read_csv("https://cn.dataone.org/cn/v2/resolve/urn:uuid:982bd2fc-4edf-4da7-96ef-0d11b853102d")
+url_predators <- pins::pin(
+  "https://cn.dataone.org/cn/v2/resolve/urn:uuid:9ffec04c-7e2d-41dd-9e88-b6c2e8c4375e")
+
+url_nests <- pins::pin("https://cn.dataone.org/cn/v2/resolve/urn:uuid:982bd2fc-4edf-4da7-96ef-0d11b853102d")
+
+predators <- read_csv(url_predators) %>% 
+  janitor::clean_names()
+
+nests <- read_csv(url_nests) %>% 
+  janitor::clean_names()
 ```
+
+## Let's make a geographical map
+
+### Convert to spatial object
 
 ```{r}
 nests_sf <- nests %>% 
   drop_na(long_corrected, lat_corrected) %>% 
   st_as_sf(coords = c("long_corrected", "lat_corrected"), crs = 4326)
 
-# crsuggest::suggest_crs(nests_sf)
-
-nests_sf %>% 
-  ggplot() +
-  geom_sf(aes(color = plot)) +
-  coord_sf(crs = 3411) +
-  theme_minimal()
+crsuggest::suggest_crs(nests_sf)
 ```
 
+### Select the projection and crop the data
+
+```{r}
+nests_sf <- nests_sf %>% 
+  st_transform(6351)
+
+map <- rnaturalearth::ne_coastline(returnclass = "sf", scale = "large") %>%
+  st_transform(6351) %>%
+  st_crop(nests_sf %>% st_buffer(1e4))
+```
+
+### Create a map
+
+```{r}
+nests_sf %>% 
+  ggplot() +
+  geom_sf(data = map) +
+  geom_sf(aes(color = plot), size = 0.1) +
+  scale_color_viridis_d(
+    guide = guide_legend(
+      override.aes = list(size = 2)
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "top",
+    legend.title = element_blank()
+  )
+```
+
+## Assign common specie names
+
+The given data only contain the species codes. Would be useful to attach the common species names as well. To do so, I will read the [Species Table and Recommended Band Sizes](https://www.pwrc.usgs.gov/bbl/manual/speclist.cfm). It contains species codes and common names as well.
+
+```{r}
+species_lut <- rvest::read_html(
+  "https://www.pwrc.usgs.gov/bbl/manual/speclist.cfm"
+) %>%
+  rvest::html_table() %>%
+  .[[1]] %>%
+  janitor::clean_names() %>%
+  select(species = alpha_code, common_name) %>% 
+  mutate(across(where(is.character), tolower))
+  
+species_lut
+
+nests <- nests %>% 
+  left_join(species_lut, by = "species") %>% 
+  relocate(common_name, .after = species)
+
+nests
+
+predators <- predators %>% 
+  left_join(species_lut, by = "species") %>% 
+  relocate(common_name, .after = species)
+```
+
+Step #4: Calculate total number of predators by year and species, and plot the result.
+
+```{r}
+total_predators_per_year <- predators %>% 
+  count(year, species, common_name) %>% 
+  mutate(n = case_when(
+    is.na(common_name) ~ 0L,
+    TRUE ~ n
+  )) 
+
+total_predators_per_year
+
+total_predators_per_year %>% 
+  drop_na(common_name) %>% 
+  ggplot(aes(x = year, y = n, color = common_name)) +
+  geom_line(size = 1) +
+  geom_point(size = 3, show.legend = FALSE) +
+  paletteer::scale_color_paletteer_d(
+    "ggthemes::stata_s2color",
+    guide = guide_legend(
+      override.aes = list(size = 2)
+    )
+  )
+```
+
+Same data, but using a barplot.
+
+```{r}
+total_predators_per_year %>% 
+  drop_na(common_name) %>% 
+  ggplot(aes(x = year, y = n, fill = common_name)) +
+  geom_col() +
+  paletteer::scale_fill_paletteer_d("ggthemes::stata_s2color")
+```
+
+Step #5: Calculate total number of eggs predated by year and species.
+
+```{r}
+total_nest_per_year <- nests %>% 
+  select(year, site, nest_id, species) %>% 
+  count(year, site, name = "total_nest")
+
+total_nest_per_year
+```
+
+Step #6: Calculate total number of predators by year, join to summarized egg predation table, and plot the result.
+
+```{r}
+total_predators_per_year <- predators %>% 
+  count(year, site, name = "total_predator") 
+
+total_predators_per_year
+```
+
+Merge nests and predators.
+
+```{r}
+total_nest_per_year
+total_predators_per_year
+
+df <- inner_join(total_nest_per_year, total_predators_per_year)
+
+df
+```
+
+Visualize if the total number of nest and predator co-vary in time.
+
+```{r}
+df %>%
+  pivot_longer(starts_with("total")) %>% 
+  ggplot(aes(x = year, y = value, color = name)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~name, ncol = 1)
+```
+
+```{r}
+df %>%
+  ggplot(aes(x = total_predator, y = total_nest)) +
+  geom_point() +
+  geom_smooth(se = FALSE)
+```
